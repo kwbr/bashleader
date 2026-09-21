@@ -1,0 +1,55 @@
+#!/usr/bin/expect -f
+set timeout 20
+set test_dir [file dirname [file normalize [info script]]]
+set driver [file join $test_dir binding_lifecycle.bash]
+set bash [string trim [exec sh -c {command -v bash}]]
+
+spawn -noecho $bash --noprofile --norc
+send -- "PS1='LEADR_TEST> '; source '$driver'\r"
+expect {
+  -re {BINDING_TEST_OK} {}
+  -re {BINDING_TEST_FAIL:[^\r\n]*} {
+    puts stderr $expect_out(0,string)
+    exit 1
+  }
+  timeout {
+    puts stderr "binding integration test timed out"
+    exit 1
+  }
+  eof {
+    puts stderr "binding integration test exited without success"
+    exit 1
+  }
+}
+expect -re {LEADR_TEST> }
+
+# The lifecycle test leaves Ctrl-G active. Exercise the real /dev/tty reader,
+# cursor marker, cancellation, execution, and prompt recovery.
+send -- "\x07gc"
+after 100
+send -- "OK"
+expect -re {git commit -m "OK"}
+send -- "\x03"
+expect -re {LEADR_TEST> }
+
+send -- "\x07"
+after 100
+send -- "\x03"
+expect -re {LEADR_TEST> }
+send -- "echo TRAP_OK\r"
+expect -re {TRAP_OK}
+expect -re {LEADR_TEST> }
+
+send -- "\x07gs"
+expect -re {\+ git status}
+expect -re {LEADR_TEST> }
+send -- "exit\r"
+expect eof
+
+set result [wait]
+set status [lindex $result 3]
+if {$status != 0} {
+  puts stderr "interactive Bash exited with status $status"
+  exit $status
+}
+puts "interactive lifecycle test passed"
