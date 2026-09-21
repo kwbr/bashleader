@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+case ${LEADR_TEST_SELECTION-} in
+  cancel) exit 130 ;;
+  fail) exit 7 ;;
+esac
+
+while IFS= read -r candidate; do
+  key=${candidate%%$'\t'*}
+  if [[ $key == "${LEADR_TEST_SELECTION-}" ]]; then
+    printf '%s\n' "$candidate"
+    exit 0
+  fi
+done
+exit 1

@@ -2,10 +2,11 @@
 set timeout 20
 set test_dir [file dirname [file normalize [info script]]]
 set driver [file join $test_dir binding_lifecycle.bash]
+set fake_bin [file join $test_dir fake-bin]
 set bash [string trim [exec sh -c {command -v bash}]]
 
 spawn -noecho $bash --noprofile --norc
-send -- "PS1='LEADR_TEST> '; source '$driver'\r"
+send -- "PS1='LEADR_TEST> '; export PATH='$fake_bin':\$PATH; export LEADR_TEST_SELECTION=gc; source '$driver'\r"
 expect {
   -re {BINDING_TEST_OK} {}
   -re {BINDING_TEST_FAIL:[^\r\n]*} {
@@ -23,27 +24,29 @@ expect {
 }
 expect -re {LEADR_TEST> }
 
-# The lifecycle test leaves Ctrl-G active. Exercise the real /dev/tty reader,
-# cursor marker, cancellation, execution, and prompt recovery.
-send -- "\x07gc"
+# The fake fzf makes picker outcomes deterministic while this PTY test covers
+# binding invocation, cursor placement, cancellation, execution, and redraw.
+send -- "\x07"
 after 100
 send -- "OK"
 expect -re {git commit -m "OK"}
 send -- "\x03"
 expect -re {LEADR_TEST> }
 
-send -- "\x07"
-after 100
-send -- "\x03"
+send -- "export LEADR_TEST_SELECTION=cancel\r"
 expect -re {LEADR_TEST> }
-send -- "echo TRAP_OK\r"
-expect -re {TRAP_OK}
+send -- "\x07"
+expect -re {LEADR_TEST> }
+send -- "echo CANCEL_OK\r"
+expect -re {CANCEL_OK}
 expect -re {LEADR_TEST> }
 
-send -- "\x07gs"
+send -- "export LEADR_TEST_SELECTION=gs\r"
+expect -re {LEADR_TEST> }
+send -- "\x07"
 expect -re {\+ git status}
 expect -re {LEADR_TEST> }
-send -- "exit\r"
+send -- "exit 0\r"
 expect eof
 
 set result [wait]

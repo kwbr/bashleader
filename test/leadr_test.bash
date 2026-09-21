@@ -116,10 +116,10 @@ show_output=$(leadr show gs)
 assert_contains "$show_output" 'flags:       INSERT' 'live registration replaces mapping flags'
 assert_contains "$show_output" 'command:     git status --short' 'live registration replaces mapping command'
 
-if leadr_map g Git REPLACE git 2>/dev/null; then
-  fail 'rejects a key that prefixes an existing mapping'
+if leadr_map g Git REPLACE git; then
+  pass 'fzf-only mappings may share key prefixes'
 else
-  pass 'rejects a key that prefixes an existing mapping'
+  fail 'fzf-only mappings may share key prefixes'
 fi
 if leadr_map 'g-' Bad REPLACE bad 2>/dev/null; then
   fail 'rejects non-alphanumeric mapping keys'
@@ -156,17 +156,6 @@ if leadr_map xx Surround SURROUND+EVAL 'printf #COMMAND' 2>/dev/null; then
 else
   pass 'rejects evaluated surround mapping'
 fi
-if __leadr_has_prefix g; then
-  pass 'finds a registered sequence prefix without a cache'
-else
-  fail 'finds a registered sequence prefix without a cache'
-fi
-if __leadr_has_prefix x; then
-  fail 'rejects an unknown sequence prefix'
-else
-  pass 'rejects an unknown sequence prefix'
-fi
-
 # Buffer transformations. Unit separator keeps line and point together.
 result=$(transform replace 'git #CURSORstatus' 'old #CURSOR' 3)
 assert_eq $'git status\0374' "$result" 'replace honors cursor marker'
@@ -315,28 +304,28 @@ export FZF_DEFAULT_OPTS_FILE='/tmp/should-not-be-read'
 reset_registry
 register ga replace 'git add .'
 register gc replace 'git commit'
-if picked=$(__leadr_pick g); then
+if picked=$(__leadr_pick); then
   assert_eq 'ga' "$picked" 'fzf picker returns selected mapping key'
 else
   fail 'fzf picker returns selected mapping key'
 fi
 
 export FAKE_FZF_MODE=cancel
-if __leadr_pick '' >/dev/null 2>&1; then
+if __leadr_pick >/dev/null 2>&1; then
   fail 'fzf cancellation returns cancellation status'
 else
   assert_status 1 "$?" 'fzf cancellation returns cancellation status'
 fi
 
 export FAKE_FZF_MODE=fail
-if __leadr_pick '' >/dev/null 2>&1; then
+if __leadr_pick >/dev/null 2>&1; then
   fail 'fzf failure returns failure status'
 else
   assert_status 2 "$?" 'fzf failure returns failure status'
 fi
 
 export FAKE_FZF_MODE=unknown
-if __leadr_pick '' >/dev/null 2>&1; then
+if __leadr_pick >/dev/null 2>&1; then
   fail 'fzf unknown key is rejected'
 else
   assert_status 2 "$?" 'fzf unknown key is rejected'

@@ -107,23 +107,6 @@ __leadr_validate_mapping() {
   fi
 }
 
-__leadr_has_prefix_conflict() {
-  local key=$1
-  local registry_name=${2:-__LEADR_MAP}
-  local existing
-  local -n registry=$registry_name
-
-  for existing in "${!registry[@]}"; do
-    [[ $existing == "$key" ]] && continue
-    if [[ $existing == "$key"* || $key == "$existing"* ]]; then
-      __leadr_map_error "mapping ${key@Q} conflicts with prefix mapping ${existing@Q}"
-      return 0
-    fi
-  done
-
-  return 1
-}
-
 __leadr_unpack_record() {
   local record=$1 description_name=$2 flags_name=$3 command_name=$4
   local instruction
@@ -147,7 +130,6 @@ leadr_map() {
   (( $# == 4 )) ||
     { __leadr_map_error 'usage: leadr_map KEY DESCRIPTION FLAGS COMMAND'; return 1; }
   __leadr_validate_mapping "$key" "$description" "$flags" "$command" || return 1
-  __leadr_has_prefix_conflict "$key" __LEADR_MAP && return 1
   __LEADR_MAP[$key]="${description}"$'\t'"${flags} ${command}"
 }
 
@@ -299,15 +281,6 @@ __leadr_require_init() {
   fi
 }
 
-__leadr_has_prefix() {
-  local prefix=$1 key
-
-  for key in "${!__LEADR_MAP[@]}"; do
-    [[ $key == "$prefix"* ]] && return 0
-  done
-  return 1
-}
-
 __leadr_sorted_keys() {
   local output_name=$1 key i
   local LC_ALL=C
@@ -400,12 +373,11 @@ leadr() {
 }
 
 __leadr_emit_candidates() {
-  local prefix=$1 key description flags command
+  local key description flags command
   local -a keys=()
 
   __leadr_sorted_keys keys
   for key in "${keys[@]}"; do
-    [[ $key == "$prefix"* ]] || continue
     __leadr_unpack_record "${__LEADR_MAP[$key]}" description flags command
     printf '%s\t%s\t%s\t%s\n' "$key" "$description" "$flags" "$command"
   done
@@ -413,11 +385,11 @@ __leadr_emit_candidates() {
 
 # Return 0 with a key, 1 for cancel, and 2 for failure.
 __leadr_pick() {
-  local prefix=$1 selected status key
+  local selected status key
 
   if selected=$(
     set +o pipefail
-    __leadr_emit_candidates "$prefix" |
+    __leadr_emit_candidates |
       FZF_DEFAULT_OPTS='' FZF_DEFAULT_OPTS_FILE='' command fzf \
         --height='~40%' \
         --layout=reverse \
@@ -573,75 +545,18 @@ __leadr_apply_mapping() {
 }
 
 __leadr_invoke() {
-  local sequence='' key='' selected='' old_int
-  local interrupted=0 done=0 cancelled=0
+  local selected status
 
   __leadr_require_init || return 1
-  old_int=$(trap -p INT)
-  trap 'interrupted=1' INT
-
-  while (( ! done && ! cancelled )); do
-    key=''
-    if ! IFS= read -r -s -n 1 key </dev/tty; then
-      cancelled=1
-      break
-    fi
-    if (( interrupted )); then
-      cancelled=1
-      break
-    fi
-
-    case $key in
-      $'\e'|$'\003')
-        cancelled=1
-        ;;
-      $'\b'|$'\177')
-        if [[ -n $sequence ]]; then
-          sequence=${sequence%?}
-        else
-          cancelled=1
-        fi
-        ;;
-      $'\t')
-        if selected=$(__leadr_pick "$sequence"); then
-          done=1
-        else
-          cancelled=1
-        fi
-        ;;
-      '?')
-        if [[ -z $sequence ]] && selected=$(__leadr_pick ''); then
-          done=1
-        else
-          [[ -n $sequence ]] && printf '\a' >/dev/tty
-          cancelled=1
-        fi
-        ;;
-      [A-Za-z0-9])
-        sequence+=$key
-        if [[ ${__LEADR_MAP[$sequence]+present} ]]; then
-          selected=$sequence
-          done=1
-        elif ! __leadr_has_prefix "$sequence"; then
-          printf '\a' >/dev/tty
-          cancelled=1
-        fi
-        ;;
-      *)
-        printf '\a' >/dev/tty
-        cancelled=1
-        ;;
-    esac
-  done
-
-  if [[ -n $old_int ]]; then
-    eval -- "$old_int"
+  if selected=$(__leadr_pick); then
+    __leadr_apply_mapping "$selected"
+    return
   else
-    trap - INT
+    status=$?
   fi
 
-  (( cancelled )) && return 0
-  __leadr_apply_mapping "$selected"
+  (( status == 1 )) && return 0
+  return "$status"
 }
 
 __leadr_complete() {
